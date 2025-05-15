@@ -3,3 +3,5 @@ CMR/
 #Ignoro i risultati dei CMR di prova
 Final/
 venv/
+dist/
+build/
