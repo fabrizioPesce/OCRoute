@@ -12,7 +12,13 @@ import io
 
 # ---- UTILS ---- #
 
-ocr = PaddleOCR(use_angle_cls=True, lang='it')
+ocr = PaddleOCR(
+    use_angle_cls=True,
+    det_model_dir="_internal/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer",
+    rec_model_dir="_internal/.paddleocr/whl/rec/latin/latin_PP-OCRv3_rec_infer",
+    cls_model_dir="_internal/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer"
+)
+print(f"Model dir: {ocr.args.det_model_dir}")
 
 def extract_numbers(text):
     return re.findall(r'\b\d{10}\b', text)

@@ -9,11 +9,14 @@ a = Analysis(
         ('venv/Lib/site-packages/paddle/libs/mklml.dll', 'paddle/libs'),
     ],
     datas=[
-    ('/venv/Lib/site-packages/paddleocr/tools', 'paddleocr/tools'),
-    ('/venv/Lib/site-packages/paddleocr/ppocr', 'paddleocr/ppocr'),
-    ('/venv/Lib/site-packages/Cython/Utility', 'Cython/Utility'),
-    ('~/.paddleocr', '.paddleocr'),
-    ('/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/paddleocr/ppstructure', 'paddleocr/ppstructure')
+    ('C:/Users/donot/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/paddleocr/tools', 'paddleocr/tools'),
+    ('C:/Users/donot/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/paddleocr/ppocr', 'paddleocr/ppocr'),
+    ('C:/Users/donot/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/Cython/Utility', 'Cython/Utility'),
+    ('C:/Users/donot/.paddleocr', '.paddleocr'),
+    ('C:/Users/donot/.paddleocr/whl/rec/latin/latin_PP-OCRv3_rec_infer/*', '.paddleocr/whl/rec/latin/latin_PP-OCRv3_rec_infer'),
+    ('C:/Users/donot/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer/*', '.paddleocr/whl/det/en/en_PP-OCRv3_det_infer'),
+    ('C:/Users/donot/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/*', '.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer'),
+    ('C:/Users/donot/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/paddleocr/ppstructure', 'paddleocr/ppstructure')
     ],
     hiddenimports=['paddleocr', 'paddle', 'paddleocr.tools', 'paddleocr.ppocr', 'ppstructure', 'cv2', 'fitz', 'pdf2image', 'reportlab', 'PIL', 'setuptools', 'requests', 'PIL.ImageDraw', 'PIL.ImageFont', 'shapely', 'pyclipper', 'skimage', 'skimage.morphology._skeletonize', 'skimage.draw', 'skimage.measure','skimage.filters', 'albumentations', 'albumentations.augmentations.transforms', 'albumentations.core.composition', 'lmdb', 'docx'],
     hookspath=[],
@@ -41,6 +44,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    onefile=True,
 )
 coll = COLLECT(
     exe,
