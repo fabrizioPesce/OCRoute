@@ -13,12 +13,8 @@ from collections import OrderedDict
 
 # ---- UTILS ---- #
 
-ocr = PaddleOCR(
-    use_angle_cls=True,
-    det_model_dir="_internal/.paddleocr/whl/det/en/en_PP-OCRv3_det_infer",
-    rec_model_dir="_internal/.paddleocr/whl/rec/latin/latin_PP-OCRv3_rec_infer",
-    cls_model_dir="_internal/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer"
-)
+ocr = PaddleOCR(use_angle_cls=True, lang='it')
+
 print(f"Model dir: {ocr.args.det_model_dir}")
 
 def extract_numbers(text):
@@ -263,22 +259,6 @@ class ReviewWindow:
 
     def do_pan(self, event):
         self.canvas.scan_dragto(event.x, event.y, gain=1)
-
-    # Entry management
-    def add_entry(self, parent, number="", confidence=1.0):
-        frame = tk.Frame(parent, bg=self.get_bg_color(confidence))
-        frame.pack(fill=tk.X, pady=2)
-
-        tk.Label(frame, text="Codice CMR:", bg=self.get_bg_color(confidence)).pack(side=tk.LEFT)
-        entry = tk.Entry(frame)
-        entry.insert(0, number)
-        entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # Aggiungi tooltip con la confidenza
-        self.add_tooltip(frame, f"Confidenza OCR: {confidence:.2f}")
-
-        tk.Button(frame, text="X", command=lambda: self.remove_entry(frame)).pack(side=tk.RIGHT)
-        self.entries.append((frame, confidence))
     
     def get_bg_color(self, confidence):
         return "#ffcccc" if confidence < self.confidence_threshold else "#ffffff"
@@ -304,10 +284,51 @@ class ReviewWindow:
         widget.bind("<Enter>", enter)
         widget.bind("<Leave>", leave)
 
+    # Modifica il metodo remove_entry
     def remove_entry(self, frame):
-        self.entries.remove(frame)
-        frame.destroy()
+        # Cerca la entry corrispondente
+        to_remove = None
+        for entry in self.entries:
+            if entry[0] == frame:
+                to_remove = entry
+                break
+        if to_remove:
+            self.entries.remove(to_remove)
+            frame.destroy()
 
+    # Modifica il metodo add_entry
+    def add_entry(self, parent, number="", confidence=1.0):
+        frame = tk.Frame(parent, bg=self.get_bg_color(confidence))
+        frame.pack(fill=tk.X, pady=2, expand=True)
+
+        # Etichetta e campo input
+        tk.Label(frame, text="Codice CMR:", bg=self.get_bg_color(confidence)).pack(side=tk.LEFT)
+        entry = tk.Entry(frame)
+        entry.insert(0, number)
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Campo confidenza non modificabile
+        conf_label = tk.Entry(frame, 
+                            width=6, 
+                            relief='flat',
+                            state='readonly',
+                            font=('Arial', 8),
+                            justify='right')
+        conf_label.config(readonlybackground=self.get_bg_color(confidence))
+        conf_label.pack(side=tk.RIGHT, padx=(0, 5))
+        conf_label.configure(state='normal')
+        conf_label.delete(0, tk.END)
+        conf_label.insert(0, f"{confidence:.2f}")
+        conf_label.configure(state='readonly')
+
+        # Pulsante cancellazione
+        tk.Button(frame, 
+                text="X", 
+                command=lambda: self.remove_entry(frame),
+                bg=self.get_bg_color(confidence),
+                activebackground="#ff9999").pack(side=tk.RIGHT)
+    
+        self.entries.append((frame, confidence))
     # Confirm & Cancel
     def confirm(self):
         os.makedirs(self.output_dir, exist_ok=True)
