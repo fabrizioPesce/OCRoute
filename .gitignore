@@ -6,3 +6,6 @@ venv/
 dist/
 build/
 _internal/
+CMR_TEST/
+config.json
+license.json
