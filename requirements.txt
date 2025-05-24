@@ -5,3 +5,6 @@ pdf2image
 PyMuPDF
 Pillow
 tk
+lexoid>=1.2.0
+pypdfium2>=4.0.0
+paddleocr>=2.6.1

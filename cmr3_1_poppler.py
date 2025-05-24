@@ -12,13 +12,14 @@ import json
 import sys
 import requests
 import uuid
+from pdf2image import convert_from_path
 from typing import List, Tuple, Dict, Optional, Callable
-import pypdfium2
 
 # ---- CONSTANTS ----
 CONFIG_FILE = os.path.join(os.path.abspath("."), "config.json")
 LICENSE_FILE = os.path.join(os.path.abspath("."), "license.json")
 VALIDATION_URL = "http://fabriziopesce.atwebpages.com/validate_licenses.php"
+POPPLER_PATH = os.path.join(os.path.abspath("."), "poppler-24.08.0", "Library", "bin")
 
 # ---- UTILS ----
 def resource_path(relative_path: str) -> str:
@@ -45,37 +46,27 @@ def extract_numbers(text: str) -> List[str]:
     """Extract 10-digit numbers from text"""
     return re.findall(r'\b\d{10}\b', text)
 
+def preprocess_image(image_path: str) -> np.ndarray:
+    """Preprocess image for OCR"""
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    image = cv2.resize(image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    image = cv2.bilateralFilter(image, 9, 75, 75)
+    return cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                               cv2.THRESH_BINARY, 31, 2)
+
 def save_image_as_pdf(image_path: str, output_path: str) -> None:
     """Save image as PDF with standard size"""
     image = Image.open(image_path).convert("RGB")
     image = image.resize((595, 842), Image.LANCZOS)
     image.save(output_path, "PDF", resolution=100.0)
 
-def pdf_to_images_pypdfium(pdf_path: str, scale: float = 2.0) -> List[Image.Image]:
-    """Convert PDF to list of PIL images using pypdfium2"""
-    pdf = pypdfium2.PdfDocument(pdf_path)
-    images = []
-    
-    for page in pdf:
-        # Render with anti-aliasing and high quality
-        bitmap = page.render(
-            scale=scale,
-            rotation=0,
-            crop=(0, 0, 0, 0),
-        )
-        
-        # Convert to PIL Image
-        pil_image = bitmap.to_pil().convert("RGB")
-        images.append(pil_image)
-        page.close()
-        bitmap.close()
-    
-    pdf.close()
-    return images
+def pdf_to_images(pdf_path: str, dpi: int = 400) -> List[Image.Image]:
+    """Convert PDF to list of PIL images"""
+    return convert_from_path(pdf_path, dpi=dpi, poppler_path=POPPLER_PATH)
 
 def crop_to_roi(image: Image.Image, 
                x_perc: Tuple[float, float] = (0.00, 1.00), 
-               y_perc: Tuple[float, float] = (0.00, 1.00)) -> Image.Image:
+               y_perc: Tuple[float, float] = (0.30, 0.85)) -> Image.Image:
     """Crop image to region of interest"""
     width, height = image.size
     x1 = int(width * x_perc[0])
@@ -84,30 +75,6 @@ def crop_to_roi(image: Image.Image,
     y2 = int(height * y_perc[1])
     return image.crop((x1, y1, x2, y2))
 
-def enhance_image(image_np: np.ndarray) -> np.ndarray:
-    """Enhance image for better OCR results"""
-    # Convert to grayscale if needed
-    if len(image_np.shape) > 2:
-        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = image_np.copy()
-    
-    # Apply CLAHE for contrast enhancement
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    
-    # Apply mild sharpening
-    kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-    sharpened = cv2.filter2D(enhanced, -1, kernel)
-    
-    # Adaptive thresholding
-    return cv2.adaptiveThreshold(
-        sharpened, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        21, 5
-    )
-
 class OCRProcessor:
     """Handles OCR operations with caching"""
     _instance = None
@@ -115,39 +82,28 @@ class OCRProcessor:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang='it',
-                det_db_unclip_ratio=2.0,
-                rec_image_shape="3,48,320",
-                det_limit_type="min",
-                drop_score=0.5
-            )
+            cls._instance.ocr = PaddleOCR(use_angle_cls=True, lang='it')
         return cls._instance
     
     def image_to_numbers(self, image_path: str) -> List[str]:
         """Extract numbers from image using OCR"""
-        try:
-            image = Image.open(image_path)
-            cropped = crop_to_roi(image)
-            
-            # Convert to numpy array and enhance
-            image_np = np.array(cropped)
-            processed = enhance_image(image_np)
-            
-            # Save temp image for OCR
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
-                cv2.imwrite(temp_file.name, processed)
-                result = self.ocr.ocr(temp_file.name, cls=True)
-            
-            os.remove(temp_file.name)
-            
-            # Extract and filter numbers
-            text = " ".join([line[1][0] for line in result[0]])
-            return extract_numbers(text)
-        except Exception as e:
-            print(f"OCR Error: {e}")
-            return []
+        image = Image.open(image_path)
+        cropped = crop_to_roi(image)
+        
+        # Preprocess image
+        image_np = cv2.cvtColor(np.array(cropped), cv2.COLOR_RGB2GRAY)
+        image_np = cv2.resize(image_np, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        image_np = cv2.bilateralFilter(image_np, 9, 75, 75)
+        image_np = cv2.adaptiveThreshold(image_np, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                       cv2.THRESH_BINARY, 31, 2)
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_file:
+            cv2.imwrite(temp_file.name, image_np)
+            result = self.ocr.ocr(temp_file.name, cls=True)
+        os.remove(temp_file.name)
+        
+        text = " ".join([line[1][0] for line in result[0]])
+        return extract_numbers(text)
 
 # ---- LICENSE MANAGEMENT ----
 class LicenseManager:
@@ -278,29 +234,21 @@ class PDFProcessor:
         self.processed_files = 0
     
     def process_pdfs(self) -> None:
-        """Process all PDF files in the folder using pypdfium2"""
+        """Process all PDF files in the folder"""
         self.total_files = len(self.pdf_files)
         self.processed_files = 0
         self.update_progress()
         
         for filename in self.pdf_files:
             pdf_path = os.path.join(self.folderpath, filename)
+            images = pdf_to_images(pdf_path)
             
-            try:
-                # Usa pypdfium2 per la conversione
-                images = pdf_to_images_pypdfium(pdf_path, scale=3.0)
-                
-                if images:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_img:
-                        # Salva come PNG per migliore qualità
-                        images[0].save(temp_img.name, format='PNG', dpi=(300, 300))
-                        numbers = self.ocr_processor.image_to_numbers(temp_img.name)
-                        
-                        if numbers:
-                            self.all_numbers[filename] = (numbers, temp_img.name)
-            
-            except Exception as e:
-                print(f"Error processing {filename}: {e}")
+            if images:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
+                    images[0].save(temp_img.name)
+                    numbers = self.ocr_processor.image_to_numbers(temp_img.name)
+                    if numbers:
+                        self.all_numbers[filename] = (numbers, temp_img.name)
             
             self.processed_files += 1
             self.update_progress()
@@ -532,25 +480,16 @@ def ask_license() -> bool:
 
 def main():
     """Main application entry point"""
-    # Verifica se pypdfium2 è disponibile
-    try:
-        import pypdfium2
-    except ImportError:
-        messagebox.showerror(
-            "Errore",
-            "pypdfium2 non è installato. Installalo con: pip install pypdfium2"
-        )
-        return
-
     root = tk.Tk()
-    root.withdraw()
+    root.withdraw()  # Hide main window until license is validated
 
+    # License check
     if not LicenseManager.is_valid():
         if not ask_license():
             messagebox.showerror("Licenza non valida", "Impossibile avviare l'app: licenza non valida o scaduta.")
             sys.exit()
 
-    root.deiconify()
+    root.deiconify()  # Show main window
     app = PDFProcessorApp(root)
     root.mainloop()
 

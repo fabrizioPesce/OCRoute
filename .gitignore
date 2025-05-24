@@ -9,3 +9,5 @@ _internal/
 CMR_TEST/
 config.json
 license.json
+.paddleocr/
+poppler-24.08.0/
