@@ -232,9 +232,7 @@ class ReviewWindow:
         # Date picker
         date_time_frame = tk.Frame(scrollable_frame)
         date_time_frame.pack(pady=5)
-
-        vcmd_date = date_time_frame.register(lambda P: self.validate_input)
-
+        
         tk.Label(date_time_frame, text="Data:").pack(side=tk.LEFT)
         self.calendar = DateEntry(date_time_frame, date_pattern="dd-mm-yyyy")
         self.calendar.pack(side=tk.LEFT, padx=5)
@@ -353,9 +351,6 @@ class ReviewWindow:
             return min_value <= value <= max_value
         except ValueError:
             return False
-        
-    def validate_input(self, P, *args):
-        return P == "" or P.isdigit()
 
 # ---- LICECENSE ---- #
 
