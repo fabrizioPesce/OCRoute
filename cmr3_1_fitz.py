@@ -6,6 +6,7 @@ import tempfile
 import tkinter as tk
 from tkcalendar import DateEntry
 from tkinter import filedialog, messagebox
+from tkinter import Spinbox
 from paddleocr import PaddleOCR
 from PIL import Image, ImageTk
 import numpy as np
@@ -232,14 +233,20 @@ class ReviewWindow:
         date_time_frame = tk.Frame(scrollable_frame)
         date_time_frame.pack(pady=5)
 
+        vcmd_date = date_time_frame.register(lambda P: self.validate_input)
+
         tk.Label(date_time_frame, text="Data:").pack(side=tk.LEFT)
         self.calendar = DateEntry(date_time_frame, date_pattern="dd-mm-yyyy")
         self.calendar.pack(side=tk.LEFT, padx=5)
 
-        tk.Label(date_time_frame, text="Orario (HH:MM:SS):").pack(side=tk.LEFT)
-        self.time_entry = tk.Entry(date_time_frame, width=6)
-        self.time_entry.pack(side=tk.LEFT, padx=5)
+        vcmd_hours = date_time_frame.register(lambda P: self.validate_input(P, min_value=0, max_value=23))
+        vcmd_minutes = date_time_frame.register(lambda P: self.validate_input(P, min_value=0, max_value=59))
 
+        tk.Label(date_time_frame, text="Orario (HH:MM):").pack(side=tk.LEFT)
+        self.hours_spinbox = Spinbox(date_time_frame, width=3, from_=0, to=23, format="%02.0f", validate="key", validatecommand=(vcmd_hours, "%P") )
+        self.hours_spinbox.pack(side=tk.LEFT, padx=5)
+        self.minutes_spinbox = Spinbox(date_time_frame, width=3, from_=0, to=59, format="%02.0f", validate="key", validatecommand=(vcmd_minutes, "%P"))
+        self.minutes_spinbox.pack(side=tk.LEFT, padx=5)
 
         # Entries for CMR codes
         for number in self.numbers:
@@ -307,8 +314,16 @@ class ReviewWindow:
     def confirm(self):
         os.makedirs(self.output_dir, exist_ok=True)
         
+        try:
+            selected_date = self.calendar.get()
+            datetime.strptime(selected_date, "%d-%m-%Y")  # Validazione
+            formatted_date = datetime.strptime(selected_date, "%d-%m-%Y").strftime("%Y%m%d")
+        except ValueError:
+            messagebox.showerror("Errore", "Formato data non valido. Usa DD-MM-YYYY.")
+            return
+
         selected_date = self.calendar.get_date().strftime("%Y%m%d")
-        selected_time = re.sub(r'\D', '', self.time_entry.get())#self.time_entry.get().replace(":", "")
+        selected_time = str(self.hours_spinbox.get())+str(self.minutes_spinbox.get())
 
         for frame in self.entries:
             entry = frame.winfo_children()[1]
@@ -329,7 +344,18 @@ class ReviewWindow:
         except FileNotFoundError:
             pass
         self.callback()
-
+    
+    def validate_input(self, P, min_value, max_value, *args):
+        if P == "":
+            return True
+        try:
+            value = int(P)
+            return min_value <= value <= max_value
+        except ValueError:
+            return False
+        
+    def validate_input(self, P, *args):
+        return P == "" or P.isdigit()
 
 # ---- LICECENSE ---- #
 
