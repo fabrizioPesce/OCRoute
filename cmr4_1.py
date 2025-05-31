@@ -48,8 +48,8 @@ def load_config():
 ocr = PaddleOCR(use_angle_cls=True, lang='it')
 print(f"Model dir: {ocr.args.det_model_dir}")
 
-def extract_numbers(text):
-    return re.findall(r'\b\d{10}\b', text)
+def extract_numbers(text, combined_regex):
+    return re.findall(combined_regex, text)
 
 def preprocess_image(path):
     image = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
@@ -82,7 +82,7 @@ def crop_to_roi(image: Image.Image, x_perc=(0.00, 1.00), y_perc=(0.30, 0.85)):
     y2 = int(height * y_perc[1])
     return image.crop((x1, y1, x2, y2))
 
-def image_to_numbers(image_path):
+def image_to_numbers(image_path, combined_regex):
     image = Image.open(image_path)
     cropped = crop_to_roi(image)
     
@@ -107,7 +107,7 @@ def image_to_numbers(image_path):
             continue
             
         text, conf = text_entry[0], text_entry[1]
-        found_numbers = extract_numbers(text)
+        found_numbers = extract_numbers(text, combined_regex)
         
         for num in found_numbers:
             numbers_with_conf.append((num, float(conf))) 
@@ -139,7 +139,7 @@ class PDFProcessor:
             if images:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
                     images[0].save(temp_img.name)
-                    numbers_with_conf = image_to_numbers(temp_img.name)
+                    numbers_with_conf = image_to_numbers(temp_img.name, self.combined_regex)
                     if numbers_with_conf:
                         self.all_numbers[filename] = (numbers_with_conf, temp_img.name)
             self.processed_files += 1
@@ -150,6 +150,12 @@ class PDFProcessor:
 
     def process_next_pdf(self):
         if not self.all_numbers:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            os.makedirs(f"{self.output_dir}//backup{timestamp}", exist_ok=True)
+            
+            for filename in self.pdf_files:
+                shutil.copy2(os.path.join(self.folderpath, filename), f"{self.output_dir}//backup{timestamp}")
+
             messagebox.showinfo("Completato", "Tutti i PDF sono stati elaborati.")
             return
 
@@ -335,7 +341,6 @@ class ReviewWindow:
 
     def confirm(self):
         os.makedirs(self.output_dir, exist_ok=True)
-        os.makedirs(f"{self.output_dir}//..//backup", exist_ok=True)
         
         try:
             selected_date = self.calendar.get()
@@ -344,8 +349,6 @@ class ReviewWindow:
         except ValueError:
             messagebox.showerror("Errore", "Formato data non valido. Usa DD-MM-YYYY.")
             return
-        
-        shutil.copy2(os.path.join(self.input_dir, self.pdf_filename), f"{self.output_dir}//..//backup")
 
         selected_date = self.calendar.get_date().strftime("%Y%m%d")
         hours = int(self.hours_spinbox.get())
