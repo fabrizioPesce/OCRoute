@@ -15,6 +15,7 @@ a = Analysis(
 
     binaries=[
         ('venv/Lib/site-packages/paddle/libs/mklml.dll', 'paddle/libs'),
+        ('C:\Python312\python312.dll', '.'),
     ],
     datas=[
     ('C:/Users/donot/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/paddleocr/tools', 'paddleocr/tools'),
@@ -26,6 +27,9 @@ a = Analysis(
     ('C:/Users/donot/.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer/', '.paddleocr/whl/cls/ch_ppocr_mobile_v2.0_cls_infer'),
     ('C:/Users/donot/Desktop/Da tenere/OCRoute/venv/Lib/site-packages/paddleocr/ppstructure', 'paddleocr/ppstructure'),
     ('ocroute_icon.ico', '.'),
+    ('LICENSE', '.'),             
+    ('NOTICE.txt', '.'), 
+    ('COPYING', '.'), 
     ],
     hiddenimports=['paddleocr', 'paddle', 'paddleocr.tools', 'paddleocr.ppocr', 'ppstructure', 'cv2', 'fitz', 'pdf2image', 'reportlab', 'PIL', 'setuptools', 'requests', 'PIL.ImageDraw', 'PIL.ImageFont', 'shapely', 'pyclipper', 'skimage', 'skimage.morphology._skeletonize', 'skimage.draw', 'skimage.measure','skimage.filters', 'albumentations', 'albumentations.augmentations.transforms', 'albumentations.core.composition', 'lmdb', 'docx'],
     hookspath=[],

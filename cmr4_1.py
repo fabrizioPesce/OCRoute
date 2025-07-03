@@ -17,6 +17,7 @@ import sys
 import requests
 import uuid
 import shutil
+import webbrowser
 
 def resource_path(relative_path):
     try:
@@ -33,15 +34,15 @@ def get_base_path():
 
 CONFIG_FILE = os.path.join(get_base_path(), "config.json")
 
-def save_config(source, output, preamble):
+def save_config(validation_url, source, output, preamble, backup):
     with open(CONFIG_FILE, "w") as f:
-        json.dump({"source_folder": source, "output_folder": output, "preamble_file": preamble}, f)
+        json.dump({"validation_url": validation_url, "source_folder": source, "output_folder": output, "preamble_file": preamble, "backup_folder": backup}, f)
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
-    return {"source_folder": "", "output_folder": "", "preamble_file": ""}
+    return {"validation_url": "http://fabriziopesce.atwebpages.com/validate_licenses.php", "source_folder": "", "output_folder": "", "preamble_file": "", "backup_folder": ""}
 
 # ---- UTILS ---- #
 
@@ -66,11 +67,13 @@ def save_image_as_pdf_pil(image_path, output_path):
 def pdf_to_images(pdf_path, zoom_factor=3):
     images = []
     doc = fitz.open(pdf_path)
+    print(f"Numero pagine PDF: {doc.page_count}")
     mat = fitz.Matrix(zoom_factor, zoom_factor)
     for page in doc:
         pix = page.get_pixmap(matrix=mat, alpha=False)
         img = Image.open(io.BytesIO(pix.tobytes("ppm"))).convert("RGB")
         images.append(img)
+    print("Immagini caricate:", len(images))
     doc.close()
     return images
 
@@ -123,38 +126,52 @@ class PDFProcessor:
         self.progress_label = progress_label
         self.folderpath = ""
         self.output_dir = ""
+        self.backup_dir = ""
         self.pdf_files = []
+        self.image_files = []
         self.all_numbers = {}
         self.total_files = 0
         self.processed_files = 0
 
     def process_pdfs(self):
-        self.total_files = len(self.pdf_files)
+        self.total_files = len(self.pdf_files + self.image_files)
         self.processed_files = 0
         self.progress_label.config(text=f"Elaborati: 0 / {self.total_files}")
         self.progress_label.update()
-        for idx, filename in enumerate(self.pdf_files, 1):
+
+        for filename in self.pdf_files:
             pdf_path = os.path.join(self.folderpath, filename)
             images = pdf_to_images(pdf_path)
+            print("Elenco immagini:")
             if images:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
-                    images[0].save(temp_img.name)
-                    numbers_with_conf = image_to_numbers(temp_img.name, self.combined_regex)
-                    if numbers_with_conf:
-                        self.all_numbers[filename] = (numbers_with_conf, temp_img.name)
+                for page_idx, image in enumerate(images):
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
+                        print(f"{page_idx}: {image}")
+                        image.save(temp_img.name)
+                        numbers_with_conf = image_to_numbers(temp_img.name, self.combined_regex)
+                        key = f"{filename}_page{page_idx + 1}"
+                        self.all_numbers[key] = (numbers_with_conf, temp_img.name)
             self.processed_files += 1
             self.progress_label.config(text=f"Elaborati: {self.processed_files} / {self.total_files}")
             self.progress_label.update()
 
-    
+        for filename in self.image_files:
+            img_path = os.path.join(self.folderpath, filename)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_img:
+                shutil.copy2(img_path, temp_img.name)
+                numbers_with_conf = image_to_numbers(temp_img.name, self.combined_regex)
+                self.all_numbers[filename] = (numbers_with_conf, temp_img.name)
+            self.processed_files += 1
+            self.progress_label.config(text=f"Elaborati: {self.processed_files} / {self.total_files}")
+            self.progress_label.update()
 
     def process_next_pdf(self):
         if not self.all_numbers:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            os.makedirs(f"{self.output_dir}//backup{timestamp}", exist_ok=True)
+            os.makedirs(f"{self.backup_dir}//backup{timestamp}", exist_ok=True)
             
             for filename in self.pdf_files:
-                shutil.copy2(os.path.join(self.folderpath, filename), f"{self.output_dir}//backup{timestamp}")
+                shutil.copy2(os.path.join(self.folderpath, filename), f"{self.backup_dir}//backup{timestamp}")
 
             messagebox.showinfo("Completato", "Tutti i PDF sono stati elaborati.")
             return
@@ -323,7 +340,7 @@ class ReviewWindow:
         conf_label.pack(side=tk.RIGHT, padx=(0, 5))
         conf_label.configure(state='normal')
         conf_label.delete(0, tk.END)
-        conf_label.insert(0, f"{confidence:.2f}")
+        conf_label.insert(0, f"{confidence*100:.0f}%")
         conf_label.configure(state='readonly')
 
         tk.Button(frame, text="X", command=lambda: self.remove_entry(frame)).pack(side=tk.RIGHT)
@@ -354,7 +371,7 @@ class ReviewWindow:
         hours = int(self.hours_spinbox.get())
         minutes = int(self.minutes_spinbox.get())
 
-        selected_time = f"{hours:02.0f}{minutes:02.0f}"
+        selected_time = f"{hours:02.0f}{minutes:02.0f}00"
 
 
         for frame in self.entries:
@@ -391,19 +408,20 @@ class ReviewWindow:
 # ---- LICECENSE ---- #
 
 LICENSE_FILE = os.path.join(get_base_path(), "license.json")
-VALIDATION_URL = "http://fabriziopesce.atwebpages.com/validate_licenses.php" 
+config = load_config()
+VALIDATION_URL = config["validation_url"]
 
 def is_license_valid():
-    if not os.path.exists(LICENSE_FILE):
-        return False
+        if not os.path.exists(LICENSE_FILE):
+            return False
 
-    with open(LICENSE_FILE, "r") as f:
-        data = json.load(f)
+        with open(LICENSE_FILE, "r") as f:
+            data = json.load(f)
 
-    expires_on = datetime.fromisoformat(data.get("expires_on"))
-    if expires_on < datetime.now():
-        return False
-    return True
+        expires_on = datetime.fromisoformat(data.get("expires_on"))
+        if expires_on < datetime.now():
+            return False
+        return True
 
 def ask_license():
     def on_submit():
@@ -472,15 +490,22 @@ if __name__ == "__main__":
         filepath = filedialog.askopenfilename(filetypes=[("Text", "*.txt")])
         if filepath:
             selected_preamble.set(filepath)
+    
+    def choose_backup_folder():
+        folder = filedialog.askdirectory(title="Seleziona cartella Backup")
+        if folder:
+            selected_backup.set(folder)
 
     def start_processing():
+        validation_url = selected_validation_url
         source = selected_source.get()
         output = selected_output.get()
         preamble = selected_preamble.get()
+        backup = selected_backup.get()
         if not source or not output:
             messagebox.showwarning("Attenzione", "Seleziona entrambe le cartelle.")
             return
-        save_config(source, output, preamble)
+        save_config(validation_url, source, output, preamble, backup)
         with open(preamble, "r") as f:
             prefissi = [line.strip() for line in f if line.strip()]
         
@@ -490,10 +515,78 @@ if __name__ == "__main__":
         processor = PDFProcessor(root, progress_label)
         processor.folderpath = source
         processor.output_dir = output
+        processor.backup_dir = backup
         processor.combined_regex = combined_regex
         processor.pdf_files = [f for f in os.listdir(source) if f.lower().endswith(".pdf")]
+        image_extensions = ('.png', '.jpg', '.jpeg')
+        processor.image_files = [f for f in os.listdir(source) if f.lower().endswith(image_extensions)]
         processor.process_pdfs()
         processor.process_next_pdf()
+
+    def show_about_window():
+        def open_link(event):
+            webbrowser.open_new("https://github.com/fabrizioPesce/OCRoute")
+
+        def show_file_content(title, filename):
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except FileNotFoundError:
+                messagebox.showerror("Errore", f"File non trovato: {filename}")
+                return
+
+            file_win = tk.Toplevel(about_win)
+            file_win.title(title)
+            file_win.geometry("600x500")
+
+            text = tk.Text(file_win, wrap="word")
+            text.insert("1.0", content)
+            text.config(state="disabled")
+            text.pack(expand=True, fill="both", padx=10, pady=10)
+
+        about_text = """\
+        Estrai Codici e Crea PDF
+        Versione 1.0
+
+        Questa applicazione è distribuita sotto licenza GNU AGPLv3.
+        Tutte le librerie di terze parti utilizzate sono citate nel file NOTICE.txt.
+
+        Autori: Fabrizio Pesce, Daniele Gottardo
+
+        Per maggiori informazioni, visita il repository GitHub:
+        https://github.com/fabrizioPesce/OCRoute
+        """
+
+        about_win = tk.Toplevel(root)
+        about_win.title("Informazioni")
+        about_win.geometry("700x300")
+        about_win.resizable(False, False)
+
+        about_win.columnconfigure(0, weight=1)
+        about_win.rowconfigure(0, weight=1)
+
+        text_widget = tk.Text(about_win, wrap="word", cursor="arrow")
+        text_widget.insert("1.0", about_text)
+
+        start_index = about_text.find("https://github.com")
+        end_index = start_index + len("https://github.com/fabrizioPesce/OCRoute")
+        text_widget.tag_add("link", f"1.0+{start_index}c", f"1.0+{end_index}c")
+        text_widget.tag_config("link", foreground="blue", underline=1)
+        text_widget.tag_bind("link", "<Button-1>", open_link)
+
+        text_widget.config(state="disabled")
+        text_widget.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 0))
+
+        button_frame = tk.Frame(about_win)
+        button_frame.grid(row=1, column=0, pady=10)
+
+        tk.Button(button_frame, text="Visualizza LICENSE", command=lambda: show_file_content("LICENSE", resource_path("LICENSE"))).pack(side="left", padx=5)
+        tk.Button(button_frame, text="Visualizza NOTICE", command=lambda: show_file_content("NOTICE", resource_path("NOTICE.txt"))).pack(side="left", padx=5)
+        tk.Button(button_frame, text="Visualizza COPYING", command=lambda: show_file_content("COPYING", resource_path("COPYING"))).pack(side="left", padx=5)
+
+        tk.Button(about_win, text="Chiudi", command=about_win.destroy).grid(row=2, column=0, pady=(0, 10))
+
+
 
     root = tk.Tk()
     root.withdraw() 
@@ -507,13 +600,15 @@ if __name__ == "__main__":
 
     root.deiconify()
     root.title("Estrai Codici e Crea PDF")
-    root.geometry("500x400")
+    root.geometry("500x500")
 
     config = load_config()
 
+    selected_validation_url = config["validation_url"]
     selected_source = tk.StringVar(value=config["source_folder"])
     selected_output = tk.StringVar(value=config["output_folder"])
     selected_preamble = tk.StringVar(value=config["preamble_file"])
+    selected_backup = tk.StringVar(value=config["backup_folder"])
 
     tk.Label(root, text="Cartella PDF:").pack(pady=5)
     tk.Entry(root, textvariable=selected_source, width=50).pack()
@@ -526,8 +621,13 @@ if __name__ == "__main__":
     tk.Label(root, text="File Preamboli:").pack(pady=5)
     tk.Entry(root, textvariable=selected_preamble, width=50).pack()
     tk.Button(root, text="Scegli File Preamboli", command=choose_preamble_file).pack(pady=5)
+    
+    tk.Label(root, text="Cartella Backup:").pack(pady=5)
+    tk.Entry(root, textvariable=selected_backup, width=50).pack()
+    tk.Button(root, text="Scegli Cartella Backup", command=choose_backup_folder).pack(pady=5)
 
     tk.Button(root, text="Conferma ed Elabora", command=start_processing, width=30).pack(pady=20)
+    tk.Button(root, text="About", command=show_about_window).pack(side="bottom", pady=10)
 
     progress_label = tk.Label(root, text="", fg="blue")
     progress_label.pack()
